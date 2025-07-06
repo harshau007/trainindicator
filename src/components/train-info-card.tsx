@@ -17,6 +17,7 @@ interface TrainInfoCardProps {
   onStartTracking: () => void;
   onStopTracking: () => void;
   prediction: string | null;
+  onClose: () => void;
 }
 
 export function TrainInfoCard({
@@ -25,6 +26,7 @@ export function TrainInfoCard({
   onStartTracking,
   onStopTracking,
   prediction,
+  onClose,
 }: TrainInfoCardProps) {
   return (
     <AnimatePresence>
@@ -36,6 +38,11 @@ export function TrainInfoCard({
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="absolute bottom-4 left-4 right-4 md:left-auto md:max-w-sm z-[1000] p-4 bg-background/80 backdrop-blur-sm border rounded-xl shadow-2xl"
         >
+          <div className="flex justify-end">
+            <Button variant="ghost" size="icon" onClick={onClose} className="absolute top-2 right-2">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
           <AnimatePresence mode="wait">
             <motion.div
               key={isTracking ? "tracking" : "details"}
@@ -51,7 +58,7 @@ export function TrainInfoCard({
                   prediction={prediction}
                 />
               ) : (
-                <DetailsView train={train} onStartTracking={onStartTracking} />
+                <DetailsView train={train} onStartTracking={onStartTracking} isTracking={isTracking} onStopTracking={onStopTracking} />
               )}
             </motion.div>
           </AnimatePresence>
@@ -64,9 +71,13 @@ export function TrainInfoCard({
 const DetailsView = ({
   train,
   onStartTracking,
+  isTracking,
+  onStopTracking,
 }: {
   train: Train;
   onStartTracking: () => void;
+  isTracking: boolean;
+  onStopTracking: () => void;
 }) => (
   <div className="space-y-4">
     <div>
@@ -108,6 +119,11 @@ const DetailsView = ({
     <Button className="w-full" onClick={onStartTracking}>
       <RadioTower className="mr-2 h-4 w-4" /> Start Live Tracking
     </Button>
+    {isTracking && (
+      <Button variant="destructive" className="w-full" onClick={onStopTracking}>
+        <X className="mr-2 h-4 w-4" /> Stop Tracking
+      </Button>
+    )}
   </div>
 );
 

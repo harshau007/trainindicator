@@ -31,7 +31,7 @@ const userPath =
   '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
 
 const stationIcon = L.divIcon({
-  html: `<div class="h-3 w-3 rounded-full bg-background border-2 border-primary"></div>`,
+  html: `<div class="h-3 w-3 rounded-full bg-background border-2 border-primary cursor-pointer hover:bg-primary/20 transition-colors"></div>`,
   className: "bg-transparent border-0",
   iconSize: [12, 12],
   iconAnchor: [6, 6],
@@ -45,12 +45,51 @@ function MapController({ center, zoom }: { center: LatLng; zoom: number }) {
   return null;
 }
 
+// Component to handle station marker clicks
+function StationMarker({
+  station,
+  onStationClick,
+}: {
+  station: Station;
+  onStationClick: (stationId: string) => void;
+}) {
+  const markerRef = React.useRef<L.Marker>(null);
+
+  React.useEffect(() => {
+    const marker = markerRef.current;
+    if (marker) {
+      marker.on("click", () => {
+        onStationClick(station.id);
+      });
+    }
+
+    return () => {
+      if (marker) {
+        marker.off("click");
+      }
+    };
+  }, [station.id, onStationClick]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={[station.latitude, station.longitude]}
+      icon={stationIcon}
+    >
+      <Tooltip direction="top" offset={[0, -5]}>
+        {station.name}
+      </Tooltip>
+    </Marker>
+  );
+}
+
 interface MapViewProps {
   center: LatLng;
   trainRoute?: Station[];
   trainPosition?: LatLng | null;
   userPosition?: LatLng | null;
   isLive: boolean;
+  onStationClick: (stationId: string) => void;
 }
 
 export default function MapView({
@@ -59,10 +98,16 @@ export default function MapView({
   trainPosition,
   userPosition,
   isLive,
+  onStationClick,
 }: MapViewProps) {
-  const routePositions = trainRoute?.map(
-    (s) => [s.latitude, s.longitude] as LatLng
-  );
+  // Use routePoints if present for more realistic curves
+  let routePositions: LatLng[] | undefined = undefined;
+  if (trainRoute && Array.isArray(trainRoute) && trainRoute.length > 0 && (trainRoute as any)[0].routePoints) {
+    // If trainRoute is actually a routePoints array
+    routePositions = (trainRoute as any).map((pt: any) => [pt.latitude, pt.longitude] as LatLng);
+  } else if (trainRoute) {
+    routePositions = trainRoute.map((s) => [s.latitude, s.longitude] as LatLng);
+  }
 
   const trainIcon = React.useMemo(
     () =>
@@ -107,15 +152,11 @@ export default function MapView({
       )}
 
       {trainRoute?.map((station) => (
-        <Marker
+        <StationMarker
           key={station.id}
-          position={[station.latitude, station.longitude]}
-          icon={stationIcon}
-        >
-          <Tooltip direction="top" offset={[0, -5]}>
-            {station.name}
-          </Tooltip>
-        </Marker>
+          station={station}
+          onStationClick={onStationClick}
+        />
       ))}
 
       {trainPosition && (

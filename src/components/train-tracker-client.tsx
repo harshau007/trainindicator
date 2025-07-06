@@ -1,14 +1,16 @@
 "use client";
 
-import { getLivePrediction } from "@/app/actions";
-import { SearchDialog } from "@/components/search-dialog";
-import { TrainInfoCard } from "@/components/train-info-card";
+import { TrainList } from "@/components/train-list";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MOCK_ROUTES } from "@/lib/data";
+import { Card, CardContent } from "@/components/ui/card";
+import { stations } from "@/lib/stations";
 import type { LatLng, Train } from "@/lib/types";
-import { Search } from "lucide-react";
+import { MapPin, Play, Search, Square, TrainFront, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import * as React from "react";
+import { MOCK_ROUTES } from "@/lib/data";
+import { TrainInfoCard } from "@/components/train-info-card";
 
 const MapView = dynamic(() => import("@/components/map-view"), {
   ssr: false,
@@ -20,24 +22,35 @@ interface TrainTrackerProps {
 }
 
 export default function TrainTracker({ trains }: TrainTrackerProps) {
+  // Station-based functionality
+  const [selectedStationId, setSelectedStationId] = React.useState<
+    string | null
+  >(null);
+  const [isTrainListOpen, setIsTrainListOpen] = React.useState(false);
+
+  // Train selection and tracking
   const [selectedTrain, setSelectedTrain] = React.useState<Train | null>(null);
-  const [isSearchOpen, setIsSearchOpen] = React.useState(false);
+  const [isTracking, setIsTracking] = React.useState(false);
+  const [userPosition, setUserPosition] = React.useState<LatLng | null>(null);
   const [liveTrainPosition, setLiveTrainPosition] =
     React.useState<LatLng | null>(null);
-  const [userPosition, setUserPosition] = React.useState<LatLng | null>(null);
-  const [isTracking, setIsTracking] = React.useState(false);
-  const [prediction, setPrediction] = React.useState<string | null>(null);
-  const watchId = React.useRef<number | null>(null);
-  const predictionIntervalId = React.useRef<NodeJS.Timeout | null>(null);
 
-  const handleSelectTrain = (train: Train | null) => {
+  const watchId = React.useRef<number | null>(null);
+
+  const handleTrainSelection = (train: Train) => {
     setSelectedTrain(train);
-    setIsSearchOpen(false);
-    if (isTracking) handleStopTracking();
+    setIsTrainListOpen(false);
+    // Stop any existing tracking
+    if (isTracking) {
+      handleStopTracking();
+    }
+    // Start tracking immediately when a train is selected
+    handleStartTracking();
   };
 
   const handleStartTracking = () => {
     if (!selectedTrain) return;
+
     if (navigator.geolocation) {
       setIsTracking(true);
       watchId.current = navigator.geolocation.watchPosition(
@@ -65,73 +78,94 @@ export default function TrainTracker({ trains }: TrainTrackerProps) {
 
   const handleStopTracking = () => {
     setIsTracking(false);
-    setPrediction(null);
-    if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
-    if (predictionIntervalId.current)
-      clearInterval(predictionIntervalId.current);
+    if (watchId.current) {
+      navigator.geolocation.clearWatch(watchId.current);
+    }
+    setLiveTrainPosition(null);
   };
 
-  React.useEffect(() => {
-    if (isTracking && userPosition) {
-      const fetchPrediction = async () => {
-        const newPrediction = await getLivePrediction({
-          location: userPosition,
-        });
-        setPrediction(newPrediction);
-      };
-      fetchPrediction();
-      predictionIntervalId.current = setInterval(fetchPrediction, 60000);
-    }
-    return () => {
-      if (predictionIntervalId.current)
-        clearInterval(predictionIntervalId.current);
-    };
-  }, [isTracking, userPosition]);
+  const handleClearSelection = () => {
+    setSelectedTrain(null);
+    handleStopTracking();
+  };
 
-  const trainRoute = selectedTrain ? MOCK_ROUTES[selectedTrain.id] : undefined;
-  const initialTrainPosition =
-    trainRoute && trainRoute.length > 0
-      ? ([trainRoute[0].latitude, trainRoute[0].longitude] as LatLng)
-      : undefined;
-  const mapCenter = liveTrainPosition ||
-    userPosition ||
-    initialTrainPosition || [19.076, 72.8777];
+  const selectedStationName = React.useMemo(() => {
+    if (!selectedStationId) return null;
+    const station = stations.find((s) => s.id === selectedStationId);
+    return station?.name || null;
+  }, [selectedStationId]);
+
+  // Get route for selected train
+  const trainRoute = React.useMemo(() => {
+    if (!selectedTrain) return undefined;
+    return MOCK_ROUTES[selectedTrain.id] || selectedTrain.schedule;
+  }, [selectedTrain]);
+
+  // Get train position
+  const trainPosition = React.useMemo(() => {
+    if (liveTrainPosition) return liveTrainPosition;
+    if (!trainRoute || trainRoute.length === 0) return null;
+    return [trainRoute[0].latitude, trainRoute[0].longitude] as LatLng;
+  }, [trainRoute, liveTrainPosition]);
+
+  // Calculate map center
+  const mapCenter = React.useMemo(() => {
+    if (liveTrainPosition) return liveTrainPosition;
+    if (userPosition) return userPosition;
+    if (trainPosition) return trainPosition;
+    return [19.076, 72.8777] as LatLng; // Default Mumbai center
+  }, [liveTrainPosition, userPosition, trainPosition]);
 
   return (
     <div className="h-[100dvh] w-screen bg-background relative font-sans overflow-hidden">
       <MapView
-        key={selectedTrain?.id}
         center={mapCenter}
         trainRoute={trainRoute}
-        trainPosition={liveTrainPosition || initialTrainPosition}
+        trainPosition={trainPosition}
         userPosition={userPosition}
+        onStationClick={(stationId: string) => {
+          setSelectedStationId(stationId);
+          setIsTrainListOpen(true);
+        }}
         isLive={isTracking}
       />
 
-      <div className="absolute top-4 right-4 z-[1000]">
+      {/* Floating Search Stations Button */}
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[1000]">
         <Button
           size="lg"
           className="shadow-2xl"
-          onClick={() => setIsSearchOpen(true)}
+          onClick={() => setIsTrainListOpen(true)}
         >
-          <Search className="mr-2 h-5 w-5" />
-          Search Trains
+          <MapPin className="mr-2 h-5 w-5" />
+          Search Stations
         </Button>
       </div>
 
-      <SearchDialog
-        isOpen={isSearchOpen}
-        onOpenChange={setIsSearchOpen}
-        trains={trains}
-        onSelectTrain={handleSelectTrain}
-      />
+      {/* Selected Train Info Card */}
+      {selectedTrain && (
+        <TrainInfoCard
+          train={selectedTrain}
+          isTracking={isTracking}
+          onStartTracking={handleStartTracking}
+          onStopTracking={handleStopTracking}
+          prediction={null}
+          onClose={handleClearSelection}
+        />
+      )}
 
-      <TrainInfoCard
-        train={selectedTrain}
-        isTracking={isTracking}
-        onStartTracking={handleStartTracking}
-        onStopTracking={handleStopTracking}
-        prediction={prediction}
+      {/* Train List Sheet */}
+      <TrainList
+        isOpen={isTrainListOpen}
+        onOpenChange={setIsTrainListOpen}
+        stationId={selectedStationId}
+        stationName={selectedStationName}
+        trains={trains}
+        onSelectTrain={(train) => {
+          setSelectedTrain(train);
+          setIsTrainListOpen(false);
+        }}
+        setSelectedStationId={setSelectedStationId}
       />
     </div>
   );
